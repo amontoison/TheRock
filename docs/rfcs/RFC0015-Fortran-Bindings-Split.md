@@ -633,7 +633,7 @@ To build a binding with its tests and run them, standalone against an installed 
 ```bash
 cmake -S projects/rocsparse/fortran -B build/rocsparse-fortran -DCMAKE_PREFIX_PATH=/opt/rocm
 cmake --build build/rocsparse-fortran
-ctest --test-dir build/rocsparse-fortran -L gpu    # on an AMD GPU; -LE gpu runs the rest elsewhere
+ctest --test-dir build/rocsparse-fortran
 ```
 
 The tests of a `rocm-libraries` binding need the HIP binding installed (`find_package(hip-fortran)`); put its prefix on `CMAKE_PREFIX_PATH`.
