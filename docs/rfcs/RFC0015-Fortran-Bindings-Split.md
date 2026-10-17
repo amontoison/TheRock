@@ -612,6 +612,32 @@ That is the existing C dependency graph, now in Fortran, not a new problem.
 TheRock compiles rocBLAS before rocSOLVER; a standalone per-repo build reuses the `roc::rocblas_fortran` target when both are configured in one tree, and otherwise resolves it with `find_package(rocblas-fortran)`, exactly as the C build depends on `librocblas`. The rocBLAS `.mod` must come from the same compiler, so a non-amdflang site builds the two bindings in that order.
 Because each library is a single module under the packaged track, `rocsolver` simply `use`s `rocblas`; the dependency is kept as-is, matching the C graph.
 
+#### Options and tests at a glance
+
+Every project that carries a binding takes the same options (the per-library spelling uses the project's prefix, `ROCSPARSE_`, `HIPFFT_` and `HIPFFTW_`, `HIP_`, ...):
+
+| Option                         | Default                                             | Effect                                                                                 |
+| :----------------------------- | :-------------------------------------------------- | :------------------------------------------------------------------------------------- |
+| `BUILD_FORTRAN_BINDINGS`       | `${UNIX}` (`OFF` on a hip\* library's CUDA backend) | build the binding; skipped, with a `STATUS` line, without a Fortran compiler           |
+| `<LIB>_BUILD_FORTRAN_BINDINGS` | unset                                               | per-library override of `BUILD_FORTRAN_BINDINGS`                                       |
+| `FORTRAN_ARRAY_INTERFACES`     | `assumed-shape`                                     | array overloads: `none`, `assumed-shape` (Fortran 2008), `assumed-rank` (Fortran 2018) |
+| `BUILD_FORTRAN_CLIENTS`        | `ON`                                                | build and register `fortran/test/`; in-tree, also needs the project's test switch      |
+| `<LIB>_BUILD_FORTRAN_CLIENTS`  | unset                                               | per-library override of `BUILD_FORTRAN_CLIENTS`                                        |
+| `<LIB>_FORTRAN_COMPILER_DIR`   | from the compiler ID                                | the `<compiler>` install subdirectory, to keep a second version of one compiler apart  |
+| `<LIB>_HAVE_FORTRAN_BINDINGS`  | (result)                                            | true when this library's binding was built                                             |
+
+A few projects add a guard of their own: rocSPARSE builds no binding under `BUILD_ROCSPARSE_ILP64`, rocSPARSE installs nothing under `BUILD_CLIENTS_ONLY`, hipSPARSE nothing under `HIPSPARSE_ENABLE_HOST=OFF`, and `projects/fortran/` takes its install component from `HIP_FORTRAN_INSTALL_COMPONENT` (default `dev`).
+
+To build a binding with its tests and run them, standalone against an installed ROCm:
+
+```bash
+cmake -S projects/rocsparse/fortran -B build/rocsparse-fortran -DCMAKE_PREFIX_PATH=/opt/rocm
+cmake --build build/rocsparse-fortran
+ctest --test-dir build/rocsparse-fortran -L gpu    # on an AMD GPU; -LE gpu runs the rest elsewhere
+```
+
+The tests of a `rocm-libraries` binding need the HIP binding installed (`find_package(hip-fortran)`); put its prefix on `CMAKE_PREFIX_PATH`.
+
 ### Layout after the split
 
 **Source tree (committed).** Each math library owns a `fortran/` directory in its `rocm-libraries` project, and `rocm-systems` has one `projects/fortran/` for HIP and ROCTx.
