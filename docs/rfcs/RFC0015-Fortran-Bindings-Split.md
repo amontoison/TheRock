@@ -720,7 +720,7 @@ Those were headers-by-convention that a user compiled into their own build; the 
 **Tests.** hipfort's test suite splits across the libraries it covers: each library's Fortran tests move to its `fortran/test/`, next to the binding they exercise (rocBLAS and hipBLAS are not there yet; see Maintaining the bindings under the split).
 Every math library's `fortran/test/` follows one convention:
 
-- one Fortran program per test (`<name>.f03`), each its own CTest test `<lib>_fortran_<name>`, labelled `gpu` so `ctest -LE gpu` leaves them out on a host without a GPU;
+- one Fortran program per test (`<name>.f03`), each its own CTest test `<lib>_fortran_<name>`, labelled `gpu` since it needs an AMD GPU;
 - built under `BUILD_FORTRAN_CLIENTS` (and, in-tree, the project's own test switch), skipped under ASan;
 - linked against the binding, the C library and the HIP binding: the tests `use hip`, found with `find_package(hip-fortran)`, so until the HIP binding (rocm-systems#11923) is installed they configure as skipped with a `STATUS` message;
 - a test that needs what the host lacks (a second GPU, a feature of the device) can exit with code 77, which CTest reports as skipped.
