@@ -193,7 +193,7 @@ To keep the scope sharp, the following are explicitly out of scope for this RFC.
 
 - **Windows.** The target is Linux HPC. ROCm's existing Fortran clients are already gated off on Windows in-tree (rocBLAS, hipBLAS, hipSOLVER, and rocSPARSE all condition Fortran on `NOT WIN32` / `UNIX`), so a Windows Fortran product is not a goal.
 - **Fortran under sanitizers.** The ASan and coverage build variants ship no Fortran, since Fortran linking is unsupported under ROCm's sanitizer configuration. Today the projects still build the bindings under ASan and only skip their tests; TheRock's shipping build is what turns them off (see Packaging in TheRock).
-- **Fortran 77, and any consumer below Fortran 2003.** The bindings are modules built on `iso_c_binding` (Fortran 2003), and code compiled below Fortran 90 has no `use` statement, so it cannot consume them. hipfort never shipped such a path, so nothing is removed. Fixed-form sources compiled by a current compiler consume the bindings normally. Language standard describes what an F77-callable path would cost; leaving it out of scope is not a judgement on the need.
+- **A binding for compilers limited to Fortran 77.** Legacy Fortran 77 code built with a current compiler uses the bindings; only a compiler that stops below Fortran 90 cannot. See Fortran 77 code, under Language standard, for what that means and what such a binding would take.
 - **The generator as a runtime or shipped product.** `rocm-fortran-generator` (written in Julia, using Clang.jl to parse headers) is build-time tooling; none of its code reaches a consumer, the compiler build, or the deliverable.
 - **Non-CMake consumer tooling as a first-class path.** CMake `find_package` is the supported integration; a `pkg-config` file or a flags script is a convenience, not a guarantee.
 - **A new build system or test framework.** This RFC defines where the bindings live and how they stay in sync, reusing the monorepo's existing CMake, CODEOWNERS, and CI substrate rather than introducing a parallel one.
@@ -246,19 +246,24 @@ The floor is Fortran 2003, and two features raise it in well-defined steps:
 Minimum compilers: gfortran, amdflang, and Cray CCE; each `fortran/` directory also carries toolchain files for Intel (`ifx`, `ifort`) and NVIDIA HPC (`nvfortran`).
 See the appendix for why a `.mod` cannot be shared across compilers, or even across versions of the same compiler.
 
-Fortran 77 is therefore out of scope for the bindings: `iso_c_binding` is F2003, and below Fortran 90 the language has no modules, so there is no `use` statement to write and nothing to bind to.
-Note that this is a property of the standard level and not of the source form: a fixed-form source compiled by a current compiler consumes the bindings like any other caller.
-Reaching the API from below Fortran 90 would need a separate artifact, a C shim library with F77 linkage plus an include file holding the constants as `PARAMETER` values.
-Such a shim is feasible; what cannot exist is an F77 *module* binding, since modules do not exist below Fortran 90.
-A C shim needs nothing from the Fortran standard, its shape is well understood, and the cost is bounded because it is another emitter on the same generator, reusing the same parsed C declarations and the same curated metadata that already records which parameters are pointers and which are scalars.
+#### Fortran 77 code
 
-It is also a project of its own rather than an increment of this one.
-Only the generator front end carries over; the emitter, the tests, the packaging, and the per-compiler symbol mangling conventions are all new, and the tested surface roughly doubles.
-It would serve a disjoint audience, since no F2003 or later caller would route through an untyped shim when the modules are available, and it would add nothing to the F2003 track, which stands unchanged whether or not the shim is ever built.
+The question comes up often, so here is the answer in one place.
 
-hipfort never shipped one, so the split removes nothing.
-This RFC moves the existing bindings; declining the F77 path here is not a statement that the need is illegitimate.
-If the need arises, it will be prioritized separately, in its own RFC scoped to that application's entry points rather than the full API, and it can be taken up without reopening anything decided here.
+- **Fortran 77 code can use the bindings.**
+  What matters is the compiler, not the age or the form of the source.
+  A Fortran 77 code base built with a current compiler (gfortran, amdflang, ifx, ...) calls the bindings like any other code: the file that calls them adds one `use rocblas` line, and fixed-form source, implicit typing and the rest of the code are untouched.
+- **Only a compiler limited to Fortran 77 cannot.**
+  The bindings are Fortran modules built on `iso_c_binding` (Fortran 2003), and a compiler that stops below Fortran 90 has no modules and no `use` statement, so it has nothing to read them with.
+- **Nothing is taken away.**
+  hipfort never offered a path for such a compiler either.
+- **What such a path would take.**
+  A separate artifact: a C shim library with Fortran 77 linkage, plus an include file holding the constants as `PARAMETER` values.
+  It is feasible, and its cost is bounded, because it would be another emitter of the same generator, reusing the same parsed C declarations and the same curated metadata.
+  It is still a project of its own: the emitter, the tests, the packaging and the per-compiler symbol-name conventions are new, the tested surface roughly doubles, and it serves only callers that cannot use the modules.
+- **How it would be taken up.**
+  If an application needs it, in its own RFC, scoped to that application's entry points rather than the full API; nothing decided here would need to change.
+  Leaving it out of this RFC is a matter of scope, not a judgement on the need.
 
 ### CUDA backend
 
@@ -849,24 +854,7 @@ The rollout is done when:
 - TheRock builds and packages them (see Packaging in TheRock);
 - an external consumer compiles and links against the installed package with at least amdflang and gfortran.
 
-The co-location step is open as one pull request per library (the `rocm-libraries` ones in draft; see below).
-Each binding lives in `projects/<lib>/fortran/`, except HIP and ROCTx, which share `rocm-systems`' `projects/fortran/`:
-
-| Library         | Pull request                                                              | Replaces                                       | Tests (in `fortran/test/` unless noted) |
-| :-------------- | :------------------------------------------------------------------------ | :--------------------------------------------- | :-------------------------------------- |
-| HIP             | [rocm-systems#11923](https://github.com/ROCm/rocm-systems/pull/11923)     | (new)                                          | 29                                      |
-| ROCTx           | [rocm-systems#12700](https://github.com/ROCm/rocm-systems/pull/12700)     | moves from `projects/rocprofiler-sdk/fortran/` | 1                                       |
-| rocBLAS         | [rocm-libraries#12533](https://github.com/ROCm/rocm-libraries/pull/12533) | `rocblas_module.f90`                           | via `clients/` (gtest shims, 4 samples) |
-| hipBLAS         | [rocm-libraries#12370](https://github.com/ROCm/rocm-libraries/pull/12370) | `hipblas_module.f90`                           | via `clients/` (gtest shims, 2 samples) |
-| rocSOLVER       | [rocm-libraries#12582](https://github.com/ROCm/rocm-libraries/pull/12582) | (new)                                          | 84                                      |
-| hipSOLVER       | [rocm-libraries#12581](https://github.com/ROCm/rocm-libraries/pull/12581) | `hipsolver_module.f90`                         | 51                                      |
-| rocSPARSE       | [rocm-libraries#12514](https://github.com/ROCm/rocm-libraries/pull/12514) | `rocsparse.f90`                                | 68, plus 14 samples                     |
-| hipSPARSE       | [rocm-libraries#12368](https://github.com/ROCm/rocm-libraries/pull/12368) | `hipsparse.f90`                                | 52, plus samples                        |
-| rocFFT          | [rocm-libraries#12366](https://github.com/ROCm/rocm-libraries/pull/12366) | (new)                                          | 18                                      |
-| hipFFT, hipFFTW | [rocm-libraries#12367](https://github.com/ROCm/rocm-libraries/pull/12367) | (new, two modules)                             | 20                                      |
-| rocRAND         | [rocm-libraries#12505](https://github.com/ROCm/rocm-libraries/pull/12505) | `rocrand_m`                                    | 25                                      |
-| hipRAND         | [rocm-libraries#12506](https://github.com/ROCm/rocm-libraries/pull/12506) | `hiprand_m`                                    | 25                                      |
-
+The co-location step is open as one pull request per library: the HIP binding (rocm-systems#11923), ROCTx (rocm-systems#12700), and one per `rocm-libraries` project, in draft until the HIP binding lands.
 Every `rocm-libraries` binding test uses `hip`, except rocRAND's and hipRAND's version checks, so these tests need the HIP binding (rocm-systems#11923) installed.
 Until it is, they configure as skipped, and the `rocm-libraries` pull requests stay in draft.
 All these pull requests share one shape: the options of Building the bindings, a static `<lib>_fortran` in the C library's namespace, the `<lib>-fortran` package beside the C one with its forwarder, the install tree of Layout after the split, and the test convention of Tests and documentation.
@@ -947,9 +935,8 @@ Several points are still open.
   F2018 assumed-rank is not uniformly mature across gfortran, flang, ifx, and Cray CCE, and HPC sites lag the standard; it compiles with amdflang today, but corner-cases are a risk.
   Turn it on by default later, once the compilers are proven.
   Assumed-rank would also shrink the generated sources and their build time (for example the ~24k-line `hipfort_hipmalloc` on today's hipfort).
-- **The Fortran 2003 floor: settled for the standard, open for the compiler version.** The design sets F2003 as the minimum (see Language standard), and no consuming application in view needs less than Fortran 90.
-  What remains is the version axis rather than the standard axis: the raw `type(c_ptr)` surface is already the smallest interoperable subset, and nothing below F2003 can express a standard-conforming C binding at all, so the question worth asking the large HPC sites is which compiler versions they pin, not which standard they target.
-  Should a pre-F2003 caller ever have to be served, the answer is the separate C shim costed in Language standard, taken up under its own RFC, and not a lower floor for these bindings: the floor and the fallback are independent decisions.
+- **Minimum compiler versions.** The minimum standard is settled at Fortran 2003 (see Language standard; for Fortran 77 code, see Fortran 77 code); the minimum compiler versions are not.
+  The question worth asking the large HPC sites is which compiler versions they pin.
 - **Where the generator ultimately lives.** It stays a standalone repository (P3), and it becomes public before the CI hook is enabled; that much this RFC settles.
   What is not settled is whether it eventually moves next to the Fortran toolchain that consumes its output.
 - **Size of the generated files.** A library's binding is one generated file, and for the large APIs it is very large (about 46k lines for `rocsparse.F90`, 43k for `hipsparse.F90`, 58k for `rocblas.F90`), too large for GitHub to render in a diff and a concern raised in review.
